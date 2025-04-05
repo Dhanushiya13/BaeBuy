@@ -1,73 +1,74 @@
+import streamlit as st
 import sqlite3
-import json
 import random
+import json
 
-def get_customer_data(user_id):
-    conn = sqlite3.connect("ecommerce.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM customers WHERE id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
+# Connect to SQLite database
+conn = sqlite3.connect("baebuy.db")
+cursor = conn.cursor()
 
-    if row:
-        return {
-            "id": row[0],
-            "age": row[1],
-            "gender": row[2],
-            "location": row[3],
-            "purchase_history": json.loads(row[4]) if row[4] else []
-        }
-    return None
+st.title("📦 Personalized Product Recommendations")
 
-def get_product_data():
-    conn = sqlite3.connect("ecommerce.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM products")
-    rows = cursor.fetchall()
-    conn.close()
+# User input (replacing input())
+user_id = st.text_input("🔍 Enter a customer ID to get recommendations:")
 
-    products = []
-    for row in rows:
-        products.append({
-            "id": row[0],
-            "category": row[1],
-            "subcategory": row[2],
-            "price": row[3],
-            "attributes": json.loads(row[4]) if row[4] else {}
-        })
-    return products
+# Only run if user_id is entered
+if user_id:
+    try:
+        user_id = int(user_id)
+        cursor.execute("SELECT * FROM customer WHERE id = ?", (user_id,))
+        customer = cursor.fetchone()
 
-def generate_recommendations(user_id):
-    customer = get_customer_data(user_id)
-    if not customer:
-        print("❌ Customer not found.")
-        return
+        if customer:
+            _, age, gender, location, purchase_history = customer
+            st.write(f"Hello {gender.title()} shopper from {location}! 🛍️ Let's find your perfect picks...")
 
-    products = get_product_data()
-    purchased_categories = set(p['category'] for p in customer['purchase_history'] if 'category' in p)
+            # Convert string back to list
+            try:
+                purchase_history = json.loads(purchase_history)
+            except:
+                purchase_history = []
 
-    matching_products = [p for p in products if p['category'] in purchased_categories]
+            category_counts = {}
+            for pid in purchase_history:
+                cursor.execute("SELECT category FROM products WHERE id = ?", (pid,))
+                result = cursor.fetchone()
+                if result:
+                    category = result[0]
+                    category_counts[category] = category_counts.get(category, 0) + 1
 
-    # Fallback to random picks if nothing matches
-    if not matching_products:
-        matching_products = random.sample(products, 4)
-    else:
-        matching_products = random.sample(matching_products, min(4, len(matching_products)))
+            top_categories = sorted(category_counts, key=category_counts.get, reverse=True)[:2]
 
-    print("\n📦 Personalized Product Recommendations:\n")
-    for idx, product in enumerate(matching_products, 1):
-        reason = f"This matches your interest in {product['category']} products."
-        fun_fact = random.choice([
-            "Did you know? This product was trending last month!",
-            "Fun Fact: Over 10,000 people bought this item in the past week.",
-            "You're not the only genius who would love this!",
-            "Top-rated by users who also liked your past picks!"
-        ])
-        print(f"{idx}. 🛍️ {product['subcategory']} — ₹{product['price']}")
-        print(f"   🤖 Why this? {reason}")
-        print(f"   🎉 {fun_fact}\n")
+            if not top_categories:
+                cursor.execute("SELECT DISTINCT category FROM products")
+                all_categories = [row[0] for row in cursor.fetchall()]
+                top_categories = random.sample(all_categories, 2)
 
-if __name__ == "__main__":
-    print("✅ Multi-Agent Recommendation System Ready")
-    user_id = input("🔍 Enter a customer ID to get recommendations: ").strip()
-    generate_recommendations(user_id)
+            recommendations = []
+            for category in top_categories:
+                cursor.execute("SELECT id, category, subcategory, price, attributes FROM products WHERE category = ? ORDER BY RANDOM() LIMIT 2", (category,))
+                recommendations.extend(cursor.fetchall())
+
+            for i, (pid, category, subcategory, price, attributes) in enumerate(recommendations):
+                attributes = json.loads(attributes)
+                reason = f"Based on your interest in {category} products like {subcategory}"
+                fun_fact = random.choice([
+                    "🔥 This one's trending big time!",
+                    "🌟 Customer favorite pick!",
+                    "🚀 Limited stock alert!",
+                    "💡 AI thinks this fits your style!"
+                ])
+                st.markdown(f"""
+                #### 🛍️ Recommendation {i+1}
+                - **Product**: {subcategory}
+                - **Category**: {category}
+                - **Price**: ₹{price}
+                - **Why?**: {reason}
+                - **Fun Fact**: {fun_fact}
+                """)
+
+        else:
+            st.error("⚠️ Customer ID not found. Please try another!")
+
+    except ValueError:
+        st.error("❌ Please enter a valid numeric customer ID.")
