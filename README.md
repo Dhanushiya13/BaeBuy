@@ -1,6 +1,6 @@
 ---
 title: BaeBuy
-emoji: 🐢
+emoji: 🛍️
 colorFrom: pink
 colorTo: yellow
 sdk: streamlit
